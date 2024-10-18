@@ -21,5 +21,5 @@ If you ever use parts of this code for your analysis please cite:
 Duda-Goławska, J., Laudańska, Z., Babis, K., Malinowska-Korczak, A., Radkowska-Palińska, A., & Tomalski, P. (). Vocalisations are coupled with movements of all limbs from early infancy throughout infancy. 
 
 # Contact
-Any missing function  or questions about the code please contact jduda@psych.pan.pl
+Any missing function  or questions about the code please contact jduda (at) psych.pan.pl
 
