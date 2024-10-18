@@ -1,4 +1,4 @@
-# frontiersRhythmicPaper
+# MovinMotorVocal Paper
 This repository contains the Matlab code used in the study by Duda-Goławska & Laudańska, investigating how vocalisations are coupled with movements of all limbs throughout infancy
 
 # Data
