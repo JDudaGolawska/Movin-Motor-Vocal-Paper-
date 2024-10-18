@@ -8,7 +8,7 @@ The data that support the findings will be available upon request from the corre
 
 **Main Script**
 
-- run_me_tasks.m -> controls the whole process of analysis. The script loads the data from one of the 3 tasks and preprocess/processes the data.
+- run_MotoVocal.m -> controls the whole process of analysis. The script loads the data from one of the 3 tasks and preprocess/processes the data.
 
 **Snipplets**
 
