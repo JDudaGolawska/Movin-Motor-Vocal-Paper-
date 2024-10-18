@@ -1,0 +1,230 @@
+function [] = Averages_task_cont(c, info_events, plot_fig, vocal_set)
+
+
+for ageCode = 1:size(c.ageCode,2)
+    clear Wsensors_all Wsounds_all Event_silence
+    
+    [files, fileNames] = check_dir(c.directory_DataSetPrePro, ageCode);
+ files = files(~contains(fileNames, 'norm'));
+end
+for i_sub =1:size(files, 1)
+        clear Wsensors Wsound trials_to_reject Event_sound Event_sensor
+        disp(sprintf('---------------------- %s ----------------------', files(i_sub).name))
+        % load continous data
+        Wsensors = pop_loadset('filename', files(i_sub).name, 'filepath', files(i_sub).folder);
+        Wsensors = eeg_checkset( Wsensors);
+        
+        % extract channels just hand and legs
+        Wsensors = pop_select( Wsensors, 'channel', {Wsensors.chanlocs(1:4).labels});
+        Wsensors = eeg_checkset( Wsensors);
+        
+        %% if vocal_set is silence create new eventTable
+        if strcmp(vocal_set{:}, 'silence')
+            baby_name = extractBefore(files(i_sub).name,'.set');
+            i_sits = find(strcmp({positionEvents.baby}, baby_name));
+           
+            if  isempty(i_sits)
+                continue
+            end
+            Events_position = positionEvents(i_sits);
+            kamera = Events_all(strcmp({Events_all.baby}, baby_name)).kamera;
+           
+            del_cam = Wsensors.(sprintf('delay_cam%s_ms', kamera));
+            for i_event = 1:size(Events_position,2)
+                Events_position(i_event).latency = Events_position(i_event).latency - Wsensors.delay_ms/1000*c.fs+del_cam/1000*c.fs ;
+            end
+            Event_Wsensors = Wsensors.event;
+            [Event_sound, Event_sensor] = create_silence_epochs(Events_position, Event_Wsensors, Wsensors.times, Wsensors.srate, c.from, c.to, Wsensors, 44100);
+            Wsensors.event = Event_sensor;
+        end
+        
+        
+        %% extract epochs
+        if isempty(Wsensors.event)
+            continue
+        end
+        try
+            Wsensors = pop_epoch(Wsensors, vocal_set{:}, [c.from, c.to], 'newname', Wsensors.filename, 'epochinfo', 'yes');
+            Wsensors = eeg_checkset(Wsensors);
+        catch ME
+            if strcmp(ME.message, 'pop_epoch(): empty epoch range (no epochs were found).')
+                disp('No epoch to extract');
+                continue
+            else
+                rethrow(ME)
+            end
+        end
+        
+        % correct one epoch mistake
+        if Wsensors.times(1) ~= c.from*1000 % when one epoch is generetaed time vector is not correct
+            Wsensors.times = linspace(c.from, c.to,  size(Wsensors.times,2)) * 1000;
+            Wsensors.xmin = Wsensors.times(1)/1000;
+            Wsensors.xmax = Wsensors.times(end)/1000;
+            if isempty(Wsensors.epoch)
+                Wsensors.epoch.event = [1];
+                Wsensors.epoch.eventname = {Wsensors.event.name};
+                Wsensors.epoch.eventtype = {Wsensors.event.type};
+                Wsensors.epoch.eventlatency = {Wsensors.event.latency};
+                Wsensors.epoch.eventduration = {Wsensors.event.duration};
+                Wsensors.epoch.eventbaby = {Wsensors.event.baby};
+            end
+        end
+        
+        trials_to_reject = [];
+        for i_limb = 1:Wsensors.nbchan
+            for i_trial = 1:Wsensors.trials
+                if any(isnan(squeeze(Wsensors.data(i_limb,:,i_trial))))
+                    trials_to_reject = [trials_to_reject i_trial];
+                end
+            end
+        end
+        
+        for i_limb = 1:Wsensors.nbchan
+            for i_trial = 1:Wsensors.trials
+                if sum(squeeze(Wsensors.data(i_limb,:,i_trial)))==0
+                    trials_to_reject = [trials_to_reject i_trial];
+                end
+            end
+        end
+        
+        
+        if ~isempty(trials_to_reject)
+            trials_to_reject = unique(trials_to_reject);
+            if size(trials_to_reject, 2) == Wsensors.trials  % all trials removed
+                continue
+            end
+            Wsensors = pop_rejepoch( Wsensors, trials_to_reject ,0);
+        end
+        
+        
+        %% load sounds
+        try
+            Wsound = pop_loadset('filename',files(i_sub).name ,'filepath',['/Users/joanna/Analysis/Vocalisations/DataSetSound/' upper(c.task(1)) c.task(2:end)]);
+            Wsound = eeg_checkset( Wsound);
+        catch
+            continue
+        end
+        if strcmp(vocal_set{:}, 'silence')
+            Wsound.event = Event_sound;
+        end
+        try
+            Wsound = pop_epoch(Wsound, vocal_set{:}, [c.from, c.to], 'newname', Wsound.filename, 'epochinfo', 'yes');
+            Wsound = eeg_checkset(Wsound);
+        catch ME
+            if strcmp(ME.message, 'pop_epoch(): empty epoch range (no epochs were found).')
+                disp('No epoch to extract');
+                continue
+            else
+                rethrow(ME)
+            end
+        end
+        
+        if Wsound.times(1) ~= c.from*1000 % when one epoch is generetaed time vector is not correct
+            Wsound.times = linspace(c.from, c.to,  size(Wsound.times,2)) * 1000;
+            Wsound.xmin = Wsound.times(1)/1000;
+            Wsound.xmax = Wsound.times(end)/1000;
+            if isempty(Wsound.epoch)
+                Wsound.epoch.event = [1];
+                Wsound.epoch.eventname = {Wsound.event.name};
+                Wsound.epoch.eventtype = {Wsound.event.type};
+                Wsound.epoch.eventlatency = {Wsound.event.latency};
+                Wsound.epoch.eventduration = {Wsound.event.duration};
+                Wsound.epoch.eventbaby = {Wsound.event.baby};
+            end
+        end
+        if strcmp(vocal_set{:}, 'silence')
+            [sound_present] = check_is_sound(Wsound.data, Wsound.srate);
+            trials_to_reject = [trials_to_reject find(sound_present)];
+        end
+        
+        %% reject all not needed epochs
+        if length(trials_to_reject)>0
+            trials_to_reject = unique(trials_to_reject);
+            if size(trials_to_reject, 2) == Wsound.trials  % all trials removed
+                continue
+            end
+            Wsound = pop_rejepoch( Wsound, trials_to_reject ,0);
+            if isempty(Wsound.epoch)
+                continue
+            end
+        end
+        
+        %% reject all not needed epochs just in silence, cose we are intresed only in epoch with no sound
+        if strcmp(vocal_set{:}, 'silence') && sum(sound_present)>0
+            EpochIn = {Wsound.epoch.eventname};
+            EpochSensor = {Wsensors.epoch.eventname};
+            found = cellfun(@(x) any(strcmp(x, EpochIn)), EpochSensor);
+            Wsensors = pop_rejepoch( Wsensors, ~found ,0);
+        end
+        
+        %% Merge sets
+        if isempty(Wsensors.epoch)
+            continue
+        end
+        
+        if ~exist('Wsensors_all', 'var')
+            
+            Wsensors_all = Wsensors;
+            Wsensors_all.setname =  sprintf("%s_%d", c.task, ageCode);
+        else
+            Wsensors_all = pop_mergeset2(Wsensors, Wsensors_all);
+        end
+        
+        if ~exist('Wsounds_all', 'var')
+            Wsounds_all = Wsound;
+            Wsounds_all.setname =  sprintf("%s_%d", c.task, ageCode);
+        else
+            if ~isempty(Wsound.data)
+                Wsounds_all = pop_mergeset2(Wsounds_all, Wsound);
+            end
+        end
+        %% Figure
+        if plot_fig
+            stitle = sprintf('%s %dmo %s %s %s nb trials:%d ',...
+                info_events, c.age(ageCode), c.task, extractBefore(files(i_sub).name, '_'),...
+                [vocal_set{:}{:}], Wsensors.trials);
+            fig_handle = plot_info(Wsensors,Wsound, c.from, c.to, [stitle Wsensors.filter]);
+            %% save PNG
+            set(fig_handle, 'PaperUnits', 'centimeters');
+            
+            set(fig_handle,'PaperUnits','centimeters','PaperPosition',[0 0 25 10])
+            set(findall(fig_handle,'-property', 'FontSize'), 'FontSize', 8)
+            
+            savename = sprintf('%s %s %s', extractBefore(files(i_sub).name, '.set'), [vocal_set{:}{:}], info_events);
+            if ~exist(replace(sprintf('%sMaps/%s_%s', c.directoryFigures, info_events, [vocal_set{:}{:}]),' ','_'),'dir')
+                mkdir( replace(sprintf('%sMaps/%s_%s', c.directoryFigures, info_events, [vocal_set{:}{:}]),' ','_')) % make dir if doesnt exists
+                
+            end
+            print(fig_handle, '-dpng', '-r200', replace(sprintf('%sMaps/%s_%s/%s.png', c.directoryFigures, info_events,  [vocal_set{:}{:}], savename),' ','_') );
+        end
+    end
+    if ~exist(c.directoy_DataMat,'dir')
+        mkdir(c.directoy_DataMat) % make dir if doesnt exists
+    end
+    if exist('Wsensors_all', 'var')
+        if ~isempty(Wsensors_all.data)
+            if norm
+                Wsensors_all.setname = sprintf('all sets norm %s %s', [vocal_set{:}{:}], info_events);
+                Wsensors_all.filename = sprintf('all sets norm %s %s', [vocal_set{:}{:}], info_events);
+                Wsensors_all.filepath = sprintf('%sWsensors_all_%d_%s_%s_norm.mat', c.directoy_DataMat, ageCode, info_events,[vocal_set{:}{:}]);
+                save(sprintf('%sWsensors_all_%d_%s_%s_norm.mat', c.directoy_DataMat, ageCode, info_events,[vocal_set{:}{:}]), 'Wsensors_all');
+            else
+                Wsensors_all.setname = sprintf('all sets %s %s', [vocal_set{:}{:}], info_events);
+                Wsensors_all.filename = sprintf('all sets %s %s', [vocal_set{:}{:}], info_events);
+                Wsensors_all.filepath = sprintf('%sWsensors_all_%d_%s_%s.mat', c.directoy_DataMat, ageCode, info_events,[vocal_set{:}{:}]);
+                save(sprintf('%sWsensors_all_%d_%s_%s.mat', c.directoy_DataMat, ageCode, info_events,[vocal_set{:}{:}]), 'Wsensors_all');
+            end
+            
+            
+            if ~exist(c.directoy_DataMatSound,'dir')
+                mkdir(c.directoy_DataMatSound) % make dir if doesnt exists
+            end
+            Wsounds_all.setname = sprintf('all sets %s %s', [vocal_set{:}{:}], info_events);
+            Wsounds_all.filename = sprintf('all sets %s %s', [vocal_set{:}{:}], info_events);
+            Wsounds_all.filepath = sprintf('%sWsounds_all_%d_%s_%s.mat', c.directoy_DataMatSound, ageCode, info_events,[vocal_set{:}{:}]);
+            Wsounds_all = eeg_checkset(Wsounds_all);
+            save(sprintf('%sWsounds_all_%d_%s_%s.mat', c.directoy_DataMatSound, ageCode, info_events,[vocal_set{:}{:}]), 'Wsounds_all', '-v7.3');
+        end
+    end
+end
+end
